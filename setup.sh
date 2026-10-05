@@ -6,6 +6,38 @@ cd "$(dirname "$0")" || exit 1
 # Python 3.10+ that can make a venv WITH pip: Debian/Ubuntu ship `venv` without `ensurepip` (that is the separate
 # python3-venv package), and a venv made without it has no pip
 ok_py() { "$1" -c 'import sys, venv, ensurepip; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; }
+# a personal venv: the path is recorded in .venv-path; with one in use there is no Python install and no sudo
+good_venv() { [ -x "$1/bin/python" ] && "$1/bin/python" -m pip --version >/dev/null 2>&1; }
+VENV_PY=""
+if [ -f .venv-path ]; then
+  saved=$(head -n 1 .venv-path)
+  if [ -n "$saved" ] && good_venv "$saved"; then
+    VENV_PY="$saved/bin/python"
+  else
+    echo "The recorded virtual environment ($saved) is not usable any more."
+  fi
+fi
+if [ -z "$VENV_PY" ] && [ -t 0 ]; then
+  printf "Use an existing virtual environment of your own? [y/N] "
+  read ans
+  case "$ans" in
+    y|Y|yes|YES|Yes)
+      printf "Path to the virtual environment: "
+      read vp
+      vp=$(eval "printf '%s' $vp" 2>/dev/null) || vp=""
+      if [ -n "$vp" ] && [ -d "$vp" ] && good_venv "$vp"; then
+        vp=$(cd "$vp" && pwd)
+        echo "$vp" > .venv-path
+        VENV_PY="$vp/bin/python"
+      else
+        echo "No usable bin/python and bin/pip there: using the project's .venv instead."
+      fi
+      ;;
+  esac
+fi
+if [ -n "$VENV_PY" ]; then
+  exec "$VENV_PY" setup.py "$@"
+fi
 # a .venv from an earlier run that failed half-way has a python but no pip: start it again
 if [ -x .venv/bin/python ] && ! .venv/bin/python -m pip --version >/dev/null 2>&1; then
   rm -rf .venv
